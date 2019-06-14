@@ -3,8 +3,8 @@
 Bash script to get the last update time of all hive tables.
 
 Input:  
-- **-db, --database**: Optional specific comma-separated database(s) to focus on. If not provided, it will go over all databases.  
-- **-s, --savepath**: Output file save path.
+- **-db, --database**: (Optional) Specific comma-separated database(s) to focus on. If not provided, it will go over all databases.  
+- **-s, --savepath**: (Optional) Output file save path.
 - **-dp, --dbpattern**: (Optional) Regex pattern to filter database names out.
 - **-tp, --tblpattern**: (Optional) Regex pattern to filter tables names out.
 - **-p, --parallel**: (Optional) Number of parrallel cores to use for executing hive queries.
