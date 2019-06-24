@@ -1,10 +1,9 @@
 #!/bin/bash
 #
 # Author: Suraj Iyer
-# Description: Get last update time for all tables in all hive databases.
-# Usage: bash ./hive_tables_lastupdatetime.sh -db "<database-name>" -s "/path/to/file"
+# Description: Get last creation / alteration time for all tables in all hive databases.
+# Usage: bash ./hive_tables_lastaltertime.sh -db "<database-name>" -s "/path/to/file"
 # Parameters:
-#  -fs, --filesystem: Path to mapr / hdfs directory.
 #  -db, --database: (Optional) Specific comma-separated database(s) to focus on. If not provided, it will go over all databases.
 #  -o, --output: (Optional) Output file save path.
 #  -dp, --dbpattern: (Optional) Regex pattern to filter database names out.
@@ -19,11 +18,6 @@ do
     key="$1"
 
     case $key in
-        -fs|--filesystem)
-        FSPATH="$2"
-        shift # past argument
-        shift # past value
-        ;;
         -db|--database)
         DATABASES=`echo "$2" | sed "s/,/\n/g"`
         shift # past argument
@@ -100,17 +94,10 @@ silenthive()
     fi
 }
 
-# Hive FileSystem cluster path
-if [ -z "$FSPATH" ]
-then
-    # SET DEFAULT HDFS / MAPR DIRECTORY PATH HERE
-    FSPATH="/mapr/mapr-01.aap"
-fi
-
 # Output file save path
 if [ -z "$SAVEPATH" ]
 then
-    SAVEPATH="./hive-tables-lastupdatetime-`date +'%Y-%m-%d-%T'`.csv"
+    SAVEPATH="./hive-tables-lastaltertime-`date +'%Y-%m-%d-%T'`.csv"
 fi
 
 # Regex pattern to exclude certain database names
@@ -146,10 +133,7 @@ then
     PARALLEL=1
 fi
 
-# Log the header to output file
 log "table,lastUpdateTime"
-
-# For each database, ...
 for DB in $DATABASES
 do
     # print database name
@@ -157,32 +141,27 @@ do
     then
         echo "Database ${DB}"
     fi
-    
+
     # store all table names from DB within tables (also apply filtering based on regex pattern)
     tables=`silenthive --database ${DB} -S -e 'show tables;' | grep -E -v "${TABLENAMEREGEX}"`
-    
+
     # if tables exists within database, ...
-    if [ -n "${tables}" ]
+    if [ -n "$tables" ]
     then
         ###############################################
         ## 1. Echo all tables into a pipe.
-        ## 2. Process each table separately (optionally in parallel). Get table info (describe formatted).
-        ## 3-4. Replace all newlines and tab characters with spaces.
-        ## 5. Extract hdfs path to table directory on disk with regex.
-        ## 6. Find the last modification date of files within hdfs path.
-        ## 7. Sort files within hdfs path by modification date (-r: descending).
-        ## 8. Pick the top file (head -1) and echo the modification time of this file.
-        ## 9. Repeat process for each table and log to output file.
+        ## 2. Process each table separately (optionally in parallel). Get table info (show create).
+        ## 3. Search for line with transient_lastDdlTime value.
+        ## 4. Extract last alteration unix timestamp from line with regex.
+        ## 5. Convert timestamp to datetime formatted string.
+        ## 6. log to output file and repeat process for each table.
         ###############################################
-        echo -E "${tables}" \
-            | xargs -n1 -i -P${PARALLEL} sh -c "silenthive -S -e 'describe formatted ${DB}.{};' \
-                | tr '\n' ' ' \
-                | tr '\t' ' ' \
-                | sed 's/.*\(maprfs\|hdfs\):\([^ ]*\) .*/\2/' \
-                | xargs -i@ find ${FSPATH}/@ -printf '%TY-%Tm-%Td-%TH:%TM:%.2TS\n' \
-                | sort -r \
-                | head -n1 \
-                | xargs -i@ echo -e ${DB}.{},@" \
+        echo -E ${tables}\
+            | xargs -n1 -i -P$PARALLEL sh -c "silenthive -S -e 'show create table ${DB}.{};'\
+                | egrep 'transient_lastDdlTime'\
+                | sed 's/[^0-9]//g'\
+                | xargs -i$ sh -c 'date -d @$ +'%Y-%m-%d-%H:%M:%S''\
+                | xargs -i$ echo -e ${DB}.{},$"\
             | log
     fi
 done
